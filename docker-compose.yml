@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # ── WeedSync (มีอยู่แล้ว) ──────────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=admin1234
+      - DOCKER_INFLUXDB_INIT_ORG=myorg
+      - DOCKER_INFLUXDB_INIT_BUCKET=esp32_sensors
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=my-super-secret-token
+    restart: unless-stopped
+
+  mqtt_to_influx:
+    build: .
+    container_name: mqtt_to_influx
+    depends_on:
+      - mosquitto
+      - influxdb
+    restart: unless-stopped
+
+  sensor_api:
+    build:
+      context: .
+      dockerfile: Dockerfile_api
+    container_name: sensor_api
+    ports:
+      - "5000:5000"
+    depends_on:
+      - influxdb
+    volumes:
+      - ./sensor_api_data:/app/data   # mount เฉพาะ subfolder
+    restart: unless-stopped
+   
+
+  # ── Boss Farm (เพิ่มใหม่) ──────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_farm
+    ports:
+      - "8888:80"
+    volumes:
+      - ./web:/usr/share/nginx/html
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    restart: unless-stopped
+
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile_php
+    container_name: php_farmapi
+    ports:
+      - "8080:80"
+    volumes:
+      - ./api:/var/www/html/farmapi
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_farm
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root1234
+      MYSQL_DATABASE: farm_db
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+volumes:
+  influxdb_data:
+ 
+  mysql_data:
