@@ -5,8 +5,9 @@ FastAPI service for querying sensor data from InfluxDB
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from influxdb_client import InfluxDBClient
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
@@ -14,6 +15,7 @@ import asyncio
 import os
 import re
 import json
+import secrets
 import threading
 from datetime import datetime, timezone, timedelta
 from cachetools import TTLCache
@@ -132,6 +134,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ──────────────────────────────────────────────────────────────────────────────
+# API key auth (required for all routes except health checks / docs)
+# ──────────────────────────────────────────────────────────────────────────────
+
+API_KEY = os.getenv("API_KEY", "changeme-set-API_KEY-env-var")
+if not API_KEY or API_KEY == "changeme-set-API_KEY-env-var":
+    raise RuntimeError("API_KEY env var is not set — refusing to start with no real auth key")
+PUBLIC_PATHS = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
+
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+    if request.url.path not in PUBLIC_PATHS:
+        key = request.headers.get("x-api-key", "")
+        if not secrets.compare_digest(key, API_KEY):
+            return JSONResponse(status_code=401, content={"detail": "Missing or invalid X-API-Key header"})
+    return await call_next(request)
 
 def to_thai_time(t) -> str:
     if t is None:

@@ -47,6 +47,8 @@ services:
       - "5000:5000"
     depends_on:
       - influxdb
+    environment:
+      - API_KEY=${SENSOR_API_KEY}
     volumes:
       - ./sensor_api_data:/app/data   # mount เฉพาะ subfolder
     restart: unless-stopped
